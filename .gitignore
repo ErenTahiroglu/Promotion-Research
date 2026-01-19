@@ -31,3 +31,9 @@ visited_urls*.txt
 raw/
 screenshots/
 out/
+results*.csv
+visited_urls*.txt
+*.png
+*.html
+raw/
+screenshots/
