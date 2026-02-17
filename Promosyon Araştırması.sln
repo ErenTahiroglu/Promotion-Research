@@ -3,16 +3,18 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36908.2
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Promosyon Araştırması", "Promosyon Araştırması\Promosyon Araştırması.csproj", "{2AB07B09-BBF3-4994-A6BB-62B66B2DA5D9}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PromoScanner.Core", "PromoScanner.Core\PromoScanner.Core.csproj", "{A5367E54-0D5E-4DD3-AA57-637AE40363C3}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PromoScanner.Scraping", "PromoScanner.Scraping\PromoScanner.Scraping.csproj", "{88584A58-B95B-47D6-B6A7-3BC04B1BABCE}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Çözüm Öğeleri", "Çözüm Öğeleri", "{AC80F682-3D55-C8F8-4895-A4A9EDD49434}"
 	ProjectSection(SolutionItems) = preProject
 		global.json = global.json
 	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{2A11DEA7-E0A8-46D7-A03A-9F447992D62E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PromoScanner.Core", "src\PromoScanner.Core\PromoScanner.Core.csproj", "{C9510F47-C925-420D-8487-6AEE945A9CBD}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PromoScanner.Scraping", "src\PromoScanner.Scraping\PromoScanner.Scraping.csproj", "{5E92792C-93F9-48DF-B517-9A8525B7A932}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PromoScanner.Cli", "src\PromoScanner.Cli\PromoScanner.Cli.csproj", "{71BF3711-1A92-45F5-BEEB-EB5C84A0D2B3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -20,23 +22,28 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{2AB07B09-BBF3-4994-A6BB-62B66B2DA5D9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{2AB07B09-BBF3-4994-A6BB-62B66B2DA5D9}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{2AB07B09-BBF3-4994-A6BB-62B66B2DA5D9}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{2AB07B09-BBF3-4994-A6BB-62B66B2DA5D9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A5367E54-0D5E-4DD3-AA57-637AE40363C3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A5367E54-0D5E-4DD3-AA57-637AE40363C3}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A5367E54-0D5E-4DD3-AA57-637AE40363C3}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A5367E54-0D5E-4DD3-AA57-637AE40363C3}.Release|Any CPU.Build.0 = Release|Any CPU
-		{88584A58-B95B-47D6-B6A7-3BC04B1BABCE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{88584A58-B95B-47D6-B6A7-3BC04B1BABCE}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{88584A58-B95B-47D6-B6A7-3BC04B1BABCE}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{88584A58-B95B-47D6-B6A7-3BC04B1BABCE}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C9510F47-C925-420D-8487-6AEE945A9CBD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C9510F47-C925-420D-8487-6AEE945A9CBD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C9510F47-C925-420D-8487-6AEE945A9CBD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C9510F47-C925-420D-8487-6AEE945A9CBD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5E92792C-93F9-48DF-B517-9A8525B7A932}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5E92792C-93F9-48DF-B517-9A8525B7A932}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5E92792C-93F9-48DF-B517-9A8525B7A932}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5E92792C-93F9-48DF-B517-9A8525B7A932}.Release|Any CPU.Build.0 = Release|Any CPU
+		{71BF3711-1A92-45F5-BEEB-EB5C84A0D2B3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{71BF3711-1A92-45F5-BEEB-EB5C84A0D2B3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{71BF3711-1A92-45F5-BEEB-EB5C84A0D2B3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{71BF3711-1A92-45F5-BEEB-EB5C84A0D2B3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {986FD3AB-5F16-4C4E-9513-A2E6267CEAD5}
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{C9510F47-C925-420D-8487-6AEE945A9CBD} = {2A11DEA7-E0A8-46D7-A03A-9F447992D62E}
+		{5E92792C-93F9-48DF-B517-9A8525B7A932} = {2A11DEA7-E0A8-46D7-A03A-9F447992D62E}
+		{71BF3711-1A92-45F5-BEEB-EB5C84A0D2B3} = {2A11DEA7-E0A8-46D7-A03A-9F447992D62E}
 	EndGlobalSection
 EndGlobal

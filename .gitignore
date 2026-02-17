@@ -19,6 +19,7 @@ out/
 ## Playwright artifacts
 raw/
 screenshots/
+
 # Outputs you don't want in repo
 results*.csv
 visited_urls*.txt
@@ -37,3 +38,17 @@ visited_urls*.txt
 *.html
 raw/
 screenshots/
+
+# build artifacts
+**/bin/
+**/obj/
+.vs/
+
+# runtime outputs
+out/
+raw/
+
+# user-specific inputs/outputs
+urls.txt
+visited_urls*.txt
+results*.csv
