@@ -13,28 +13,55 @@ public class TekinozalitScraper : ISiteScraper
         var store = pageUri.Host;
         var category = await ScraperHelpers.GetPageCategoryAsync(page);
 
-        try { await page.WaitForSelectorAsync(".relative.flex.flex-col", new() { Timeout = 5000 }); } catch { }
+        var bodyText = await page.InnerTextAsync("body");
+        if (bodyText.Contains("bulunmamaktadir") || bodyText.Contains("bulunamad"))
+            return rows;
 
-        foreach (var card in await page.QuerySelectorAllAsync(".relative.flex.flex-col"))
+        try { await page.WaitForSelectorAsync("a[href*='/urun/']", new() { Timeout = 6000 }); } catch { }
+
+        var items = await page.EvaluateAsync<string[][]>(@"() => {
+            const seen = new Set();
+            const results = [];
+            document.querySelectorAll('a[href*=""/urun/""]').forEach(a => {
+                const href = a.href || '';
+                if (!href.includes('/urun/')) return;
+                if (seen.has(href)) return;
+                seen.add(href);
+                const card = a.closest('li, article') || a.parentElement;
+                let name = a.getAttribute('title') || '';
+                if (!name) {
+                    const img = card ? card.querySelector('img') : null;
+                    name = img ? (img.getAttribute('alt') || '') : '';
+                }
+                if (!name) name = (a.innerText || '').replace(/\s+/g,' ').trim();
+                if (!name && card) {
+                    const textEl = card.querySelector('span, p, h2, h3, h4');
+                    name = textEl ? (textEl.innerText || '').replace(/\s+/g,' ').trim() : '';
+                }
+                let price = '';
+                if (card) {
+                    const priceEl = card.querySelector('[class*=""price""], [class*=""fiyat""], [class*=""semibold""], [class*=""medium""]');
+                    price = priceEl ? (priceEl.innerText || '').trim() : '';
+                }
+                if (name.length > 2) results.push([href, name.slice(0, 150), price]);
+            });
+            return results.slice(0, 150);
+        }");
+
+        foreach (var item in items ?? Array.Empty<string[]>())
         {
-            var linkEl = await card.QuerySelectorAsync("a[href*='/']");
-            var nameEl = await card.QuerySelectorAsync(".text-brand-pink-02, .line-clamp-1, span");
-            if (linkEl == null || nameEl == null) continue;
+            if (item.Length < 2) continue;
+            var href = item[0];
+            var name = item[1];
+            var priceText = item.Length > 2 ? item[2] : "";
 
-            var name = (await nameEl.InnerTextAsync())?.Trim();
-            var href = await linkEl.GetAttributeAsync("href");
-            if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(name)) continue;
+            if (string.IsNullOrWhiteSpace(name) || name.Length < 3) continue;
+            if (ScraperHelpers.IsNavigationLink(href, name)) continue;
 
-            var priceEl = await card.QuerySelectorAsync("span.font-medium, .price");
-            var priceText = priceEl != null ? (await priceEl.InnerTextAsync())?.Trim() : "";
-            var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText ?? "");
+            var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText);
             if (!valid && p.HasValue) continue;
 
-            if (p.HasValue || quote)
-            {
-                var abs = Uri.TryCreate(pageUri, href, out var absUri) ? absUri!.ToString() : href!;
-                rows.Add(ScraperHelpers.CreateRow(store, seedUrl, abs, category, name, p, ccy, quote, kdv));
-            }
+            rows.Add(ScraperHelpers.CreateRow(store, seedUrl, href, category, name, p, ccy, quote, kdv));
         }
         return rows;
     }

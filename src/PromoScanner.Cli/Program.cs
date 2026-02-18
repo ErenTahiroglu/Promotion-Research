@@ -7,12 +7,10 @@ using Microsoft.Playwright;
 using PromoScanner.Core;
 using PromoScanner.Scraping;
 
-// ─── Yardımcı ───────────────────────────────────────────────────────────────
 static void Log(string msg) { Console.WriteLine(msg); Debug.WriteLine(msg); }
 static string NowStamp() =>
     DateTimeOffset.Now.ToString("yyyy-MM-dd HH:mm:ss zzz", CultureInfo.InvariantCulture);
 
-// ─── Çıktı klasörü ──────────────────────────────────────────────────────────
 var outDir = Path.Combine(Directory.GetCurrentDirectory(), "out", DateTime.Now.ToString("yyyyMMdd_HHmmss"));
 Directory.CreateDirectory(outDir);
 
@@ -24,9 +22,8 @@ void LogFile(string msg)
     File.AppendAllText(logPath, line + Environment.NewLine, Encoding.UTF8);
 }
 
-// ─── URL'leri oku ────────────────────────────────────────────────────────────
 var urlsPath = Path.Combine(AppContext.BaseDirectory, "urls.txt");
-if (!File.Exists(urlsPath)) { LogFile($"[ERR] urls.txt bulunamadı: {urlsPath}"); return; }
+if (!File.Exists(urlsPath)) { LogFile($"[ERR] urls.txt bulunamadi: {urlsPath}"); return; }
 
 var seeds = File.ReadAllLines(urlsPath)
     .Select(l => l.Trim())
@@ -36,14 +33,12 @@ var seeds = File.ReadAllLines(urlsPath)
     .ToList();
 
 LogFile($"OUT: {outDir}");
-LogFile($"Seed sayısı: {seeds.Count}");
+LogFile($"Seed sayisi: {seeds.Count}");
 
-// ─── Playwright ──────────────────────────────────────────────────────────────
 var results = new List<ResultRow>();
 var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 var skipped = new List<string>();
 var failed = new List<string>();
-
 var registry = new ScraperRegistry();
 
 using var playwright = await Playwright.CreateAsync();
@@ -61,7 +56,6 @@ var page = await context.NewPageAsync();
 page.SetDefaultNavigationTimeout(90_000);
 page.SetDefaultTimeout(10_000);
 
-// ─── Tarama döngüsü ──────────────────────────────────────────────────────────
 var q = new Queue<(string seed, string url)>();
 foreach (var s in seeds) q.Enqueue((s, s));
 
@@ -80,14 +74,14 @@ while (q.Count > 0 && processed < MAX_PAGES)
     if (!Uri.TryCreate(url, UriKind.Absolute, out var u))
     {
         skipped.Add(url);
-        LogFile($"[SKIP] Geçersiz URL: {url}");
+        LogFile($"[SKIP] Gecersiz URL: {url}");
         continue;
     }
 
     if (ScraperHelpers.LooksLikeFileDownload(u))
     {
         skipped.Add(url);
-        LogFile($"[SKIP] Dosya indirme linki: {url}");
+        LogFile($"[SKIP] Dosya: {url}");
         continue;
     }
 
@@ -98,7 +92,6 @@ while (q.Count > 0 && processed < MAX_PAGES)
         await page.GotoAsync(url, new() { WaitUntil = WaitUntilState.DOMContentLoaded, Timeout = 90_000 });
         await page.WaitForTimeoutAsync(500);
 
-        // ✅ Uygun scraper'ı bul ve çalıştır
         var scraper = registry.FindScraper(u);
         var extracted = scraper != null
             ? await scraper.ExtractAsync(page, u, seed)
@@ -107,29 +100,32 @@ while (q.Count > 0 && processed < MAX_PAGES)
         if (extracted.Count > 0)
         {
             results.AddRange(extracted);
-            LogFile($"[OK] {url} → {extracted.Count} ürün");
+            LogFile($"[OK] {url} - {extracted.Count} urun");
         }
         else
         {
-            LogFile($"[INFO] {url} → ürün yok, kategoriler aranıyor...");
+            LogFile($"[INFO] {url} - urun yok, kategoriler aranıyor...");
             var catLinks = await ScraperHelpers.FindCategoryLinksAsync(page, u);
 
-            if (catLinks.Any())
+            if (catLinks.Count > 0)
             {
-                LogFile($"[INFO] {catLinks.Count} kategori bulundu, kuyruğa ekleniyor");
+                LogFile($"[INFO] {catLinks.Count} kategori bulundu");
                 foreach (var cl in catLinks)
+                {
                     if (!visited.Contains(cl)) q.Enqueue((seed, cl));
+                }
             }
             else
             {
-                LogFile($"[SKIP] {url} → ne ürün ne de kategori");
+                LogFile($"[SKIP] {url} - ne urun ne kategori");
             }
         }
 
-        // Aynı host'taki linkler kuyruğa
         var links = await ScraperHelpers.ExtractSameHostLinksAsync(page, u);
         foreach (var link in links)
+        {
             if (!visited.Contains(link)) q.Enqueue((seed, link));
+        }
     }
     catch (TimeoutException ex)
     {
@@ -140,22 +136,20 @@ while (q.Count > 0 && processed < MAX_PAGES)
     catch (PlaywrightException ex) when (ex.Message.Contains("Download is starting", StringComparison.OrdinalIgnoreCase))
     {
         skipped.Add(url);
-        LogFile($"[SKIP] Download başladı: {url}");
+        LogFile($"[SKIP] Download: {url}");
     }
     catch (Exception ex)
     {
         failed.Add(url);
         results.Add(ResultRow.ErrorRow(u.Host, seed, url, ex.Message));
-        LogFile($"[ERR] {ex.GetType().Name}: {url} → {ex.Message}");
+        LogFile($"[ERR] {ex.GetType().Name}: {url} - {ex.Message}");
     }
 }
 
-// ─── URL listeleri ────────────────────────────────────────────────────────────
 File.WriteAllLines(Path.Combine(outDir, "visited_urls.txt"), visited.OrderBy(x => x), Encoding.UTF8);
 File.WriteAllLines(Path.Combine(outDir, "skipped_urls.txt"), skipped.Distinct().OrderBy(x => x), Encoding.UTF8);
 File.WriteAllLines(Path.Combine(outDir, "failed_urls.txt"), failed.Distinct().OrderBy(x => x), Encoding.UTF8);
 
-// ─── CSV yapılandırması ───────────────────────────────────────────────────────
 var csvCfg = new CsvConfiguration(CultureInfo.GetCultureInfo("tr-TR"))
 {
     Delimiter = ";",
@@ -166,52 +160,62 @@ void WriteCsv<T>(string path, IEnumerable<T> rows)
 {
     using var sw = new StreamWriter(path, false, new UTF8Encoding(true));
     using var csv = new CsvWriter(sw, csvCfg);
-    csv.WriteHeader<T>(); csv.NextRecord();
-    foreach (var r in rows) { csv.WriteRecord(r); csv.NextRecord(); }
+    csv.WriteHeader<T>();
+    csv.NextRecord();
+    foreach (var r in rows)
+    {
+        csv.WriteRecord(r);
+        csv.NextRecord();
+    }
 }
 
-// Tüm ham kayıtlar
 WriteCsv(Path.Combine(outDir, "results.csv"), results);
 
-// Geçerli ürünler (duplicate temizlenmiş)
 var validProducts = results
-    .Where(r => string.IsNullOrEmpty(r.Error) && !string.IsNullOrWhiteSpace(r.ProductName) && r.ProductName.Length >= 5)
+    .Where(r => string.IsNullOrEmpty(r.Error)
+             && !string.IsNullOrWhiteSpace(r.ProductName)
+             && r.ProductName.Length >= 5)
     .GroupBy(r => r.Url)
     .Select(g => g.First())
     .ToList();
 
-LogFile($"Ham: {results.Count} → Geçerli: {validProducts.Count} (Duplicate: {results.Count - validProducts.Count})");
+LogFile($"Ham: {results.Count} - Gecerli: {validProducts.Count}");
 WriteCsv(Path.Combine(outDir, "products_valid.csv"), validProducts);
 
-// Teklif gerektiren ürünler
 var quoteProducts = validProducts.Where(r => r.RequiresQuote).ToList();
-if (quoteProducts.Any())
+var pricedProducts = validProducts.Where(r => r.Price.HasValue && r.Price > 0).ToList();
+
+if (quoteProducts.Count > 0)
 {
     WriteCsv(Path.Combine(outDir, "requires_quote.csv"), quoteProducts);
     LogFile($"Teklif gereken: {quoteProducts.Count}");
 }
 
-// Fiyatlı ürünler
-var pricedProducts = validProducts.Where(r => r.Price.HasValue && r.Price > 0).ToList();
 WriteCsv(Path.Combine(outDir, "products_priced.csv"), pricedProducts);
 
-// Akıllı karşılaştırma
 if (pricedProducts.Count > 0)
 {
-    LogFile("Akıllı karşılaştırma yapılıyor...");
+    LogFile("Akilli karsilastirma yapiliyor...");
     var smartGroups = SmartProductMatcher.GroupSimilarProducts(pricedProducts);
     WriteCsv(Path.Combine(outDir, "smart_comparison.csv"), smartGroups);
-    LogFile($"Akıllı karşılaştırma: {smartGroups.Count} grup, {smartGroups.Count(g => g.SiteCount >= 2)} tanesi 2+ sitede");
+    LogFile($"Karsilastirma: {smartGroups.Count} grup, {smartGroups.Count(g => g.SiteCount >= 2)} tanesi 2+ sitede");
 
-    var bestDeals = smartGroups.Where(g => g.SiteCount >= 2).OrderByDescending(g => g.PriceDifference ?? 0).Take(50).ToList();
-    if (bestDeals.Any()) WriteCsv(Path.Combine(outDir, "best_deals.csv"), bestDeals);
+    var bestDeals = smartGroups
+        .Where(g => g.SiteCount >= 2)
+        .OrderByDescending(g => g.PriceDifference ?? 0)
+        .Take(50)
+        .ToList();
+
+    if (bestDeals.Count > 0)
+    {
+        WriteCsv(Path.Combine(outDir, "best_deals.csv"), bestDeals);
+    }
 }
 
-// ─── Özet ────────────────────────────────────────────────────────────────────
-LogFile($"===== ÖZET =====");
+LogFile("===== OZET =====");
 LogFile($"Taranan sayfa : {visited.Count}");
-LogFile($"Geçerli ürün  : {validProducts.Count}");
-LogFile($"Fiyatlı ürün  : {pricedProducts.Count}");
+LogFile($"Gecerli urun  : {validProducts.Count}");
+LogFile($"Fiyatli urun  : {pricedProducts.Count}");
 LogFile($"Teklif gereken: {quoteProducts.Count}");
-LogFile($"Başarısız     : {failed.Count}");
-LogFile($"Çıktı klasörü : {outDir}");
+LogFile($"Basarisiz     : {failed.Count}");
+LogFile($"Cikti klasoru : {outDir}");

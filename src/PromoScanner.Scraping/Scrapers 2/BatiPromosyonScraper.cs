@@ -17,14 +17,19 @@ public class BatiPromosyonScraper : ISiteScraper
 
         foreach (var card in await page.QuerySelectorAllAsync(".product-card"))
         {
-            var nameEl = await card.QuerySelectorAsync("a[href*='/urun']");
+            // İsim
+            var nameEl = await card.QuerySelectorAsync(".product-card__name a, .product-card__name");
             if (nameEl == null) continue;
-
             var name = (await nameEl.InnerTextAsync())?.Trim();
-            var href = await nameEl.GetAttributeAsync("href");
-            if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(name)) continue;
+            if (string.IsNullOrWhiteSpace(name) || name.Length < 3) continue;
 
-            var priceEl = await card.QuerySelectorAsync(".product-card__price--new, .product-card__price");
+            // Link
+            var linkEl = await card.QuerySelectorAsync("a[href]");
+            var href = linkEl != null ? await linkEl.GetAttributeAsync("href") : null;
+            if (string.IsNullOrWhiteSpace(href)) continue;
+
+            // Fiyat
+            var priceEl = await card.QuerySelectorAsync(".product-card__price--new, .product-card__prices");
             var priceText = priceEl != null ? (await priceEl.InnerTextAsync())?.Trim() : "";
             var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText ?? "");
             if (!valid && p.HasValue) continue;

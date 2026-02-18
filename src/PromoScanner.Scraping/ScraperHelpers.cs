@@ -36,7 +36,9 @@ public static class ScraperHelpers
             "yardım","help","sss","faq","nasıl","how","kargo","shipping",
             "iade","return","kullanım","terms","gizlilik","privacy",
             "çerez","cookie","kvkk","sözleşme","agreement","kampanya",
-            "teklif iste","numune","tedarikçi","kariyer","career"
+            "teklif iste","numune","tedarikçi","kariyer","career",
+            "kurumsal","hakkinda","banka","katalog","siparis-takip",
+            "uye-ol","giris-yap","hesabim","favorilerim"
         };
 
         if (navKeywords.Any(k => lowerUrl.Contains(k) || lowerText.Contains(k)))
@@ -68,14 +70,18 @@ public static class ScraperHelpers
         if (string.IsNullOrWhiteSpace(text)) return (null, "", false, false, false);
 
         var lowerText = text.ToLowerInvariant();
-        bool requiresQuote = new[] { "teklif", "iletişim", "fiyat için", "bilgi için", "sipariş", "arayın", "sorun", "sor", "contact", "fiyat alınız" }
-                             .Any(k => lowerText.Contains(k));
-        bool hasKdv = lowerText.Contains("+kdv") || lowerText.Contains("+ kdv") || lowerText.Contains("+kDv");
+        bool requiresQuote = new[]
+            { "teklif","iletişim","fiyat için","bilgi için","sipariş","arayın","sorun","sor","contact","fiyat alınız" }
+            .Any(k => lowerText.Contains(k));
+        bool hasKdv = lowerText.Contains("+kdv") || lowerText.Contains("+ kdv") || lowerText.Contains("kdv");
 
         var measurementUnits = new[] { " lt", " ml", " kg", " gr", " cm", " mm", " adet" };
         if (measurementUnits.Any(u => lowerText.Contains(u)) &&
-            !lowerText.Contains("tl") && !lowerText.Contains("₺"))
+            !lowerText.Contains("tl") && !lowerText.Contains("₺") && !lowerText.Contains("try"))
             return (null, "", requiresQuote, hasKdv, false);
+
+        // ₺ encoding bozukluğu düzelt
+        text = text.Replace("?", "₺");
 
         var patterns = new[]
         {
@@ -170,7 +176,19 @@ public static class ScraperHelpers
             if (!Uri.TryCreate(h, UriKind.Absolute, out var u)) continue;
             if (u.Scheme != Uri.UriSchemeHttp && u.Scheme != Uri.UriSchemeHttps) continue;
             if (!string.Equals(u.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)) continue;
-            list.Add(NormalizeUrl(u.ToString()));
+
+            var nu = NormalizeUrl(u.ToString());
+
+            // Navigasyon sayfalarını atla
+            if (IsNavigationLink(nu, "")) continue;
+
+            // Sayfalama parametrelerini atla (?i=, ?page=, ?sort= vs.)
+            if (u.Query.Length > 0 &&
+                (u.Query.Contains("i=") || u.Query.Contains("page=") ||
+                 u.Query.Contains("sort=") || u.Query.Contains("filter=")))
+                continue;
+
+            list.Add(nu);
         }
         return list.Distinct().ToArray();
     }
