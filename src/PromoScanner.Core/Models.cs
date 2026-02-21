@@ -8,9 +8,11 @@ public class ResultRow
     public string Category { get; set; } = "";
     public string ProductName { get; set; } = "";
     public decimal? Price { get; set; }
+    public decimal? ListPrice { get; set; }
     public string Currency { get; set; } = "";
     public bool RequiresQuote { get; set; }
     public bool HasKDV { get; set; }
+    public int MinOrderQty { get; set; } = 1;
     public string QuantityPriceListJson { get; set; } = "";
     public DateTimeOffset Timestamp { get; set; }
     public string Error { get; set; } = "";
@@ -49,6 +51,7 @@ public class SmartProductGroup
     public string MaxPriceStore { get; set; } = "";
     public decimal? PriceDifference { get; set; }
     public decimal? AvgPrice { get; set; }
+    public int MinOrderQty { get; set; } = 1;
     public string AllProductNames { get; set; } = "";
     public string AllStores { get; set; } = "";
     public List<ResultRow> Products { get; set; } = new();

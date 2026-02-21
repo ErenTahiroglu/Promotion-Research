@@ -31,12 +31,12 @@ public static class ScraperHelpers
 
         var navKeywords = new[]
         {
-            "hakkımızda","iletişim","blog","hesap","account","giriş","login",
-            "kayıt","register","sepet","cart","favoriler","wishlist",
-            "yardım","help","sss","faq","nasıl","how","kargo","shipping",
-            "iade","return","kullanım","terms","gizlilik","privacy",
-            "çerez","cookie","kvkk","sözleşme","agreement","kampanya",
-            "teklif iste","numune","tedarikçi","kariyer","career",
+            "hakkımızda","iletisim","blog","hesap","account","giris","login",
+            "kayit","register","sepet","cart","favoriler","wishlist",
+            "yardim","help","sss","faq","nasil","how","kargo","shipping",
+            "iade","return","kullanim","terms","gizlilik","privacy",
+            "cerez","cookie","kvkk","sozlesme","agreement","kampanya",
+            "teklif iste","numune","tedarikci","kariyer","career",
             "kurumsal","hakkinda","banka","katalog","siparis-takip",
             "uye-ol","giris-yap","hesabim","favorilerim"
         };
@@ -69,27 +69,26 @@ public static class ScraperHelpers
     {
         if (string.IsNullOrWhiteSpace(text)) return (null, "", false, false, false);
 
+        text = text.Replace("?", "TL").Replace("₺", "TL");
         var lowerText = text.ToLowerInvariant();
+
         bool requiresQuote = new[]
-            { "teklif","iletişim","fiyat için","bilgi için","sipariş","arayın","sorun","sor","contact","fiyat alınız" }
+            { "teklif","iletisim","fiyat icin","bilgi icin","siparis","arayin","sorun","sor","contact","fiyat alınız" }
             .Any(k => lowerText.Contains(k));
         bool hasKdv = lowerText.Contains("+kdv") || lowerText.Contains("+ kdv") || lowerText.Contains("kdv");
 
         var measurementUnits = new[] { " lt", " ml", " kg", " gr", " cm", " mm", " adet" };
         if (measurementUnits.Any(u => lowerText.Contains(u)) &&
-            !lowerText.Contains("tl") && !lowerText.Contains("₺") && !lowerText.Contains("try"))
+            !lowerText.Contains("tl") && !lowerText.Contains("try"))
             return (null, "", requiresQuote, hasKdv, false);
-
-        // ₺ encoding bozukluğu düzelt
-        text = text.Replace("?", "₺");
 
         var patterns = new[]
         {
-            @"(\d{1,3}(?:\.\d{3})*,\d{2})\s*(TL|₺|TRY|USD|EUR)?",
-            @"(\d{1,3}(?:,\d{3})*\.\d{2})\s*(TL|₺|TRY|USD|EUR)?",
-            @"(\d+,\d{2})\s*(TL|₺|TRY|USD|EUR)?",
-            @"(\d+\.\d{2})\s*(TL|₺|TRY|USD|EUR)?",
-            @"(\d+)\s*(TL|₺|TRY|USD|EUR)"
+            @"(\d{1,3}(?:\.\d{3})*,\d{2})\s*(TL|TRY|USD|EUR)?",
+            @"(\d{1,3}(?:,\d{3})*\.\d{2})\s*(TL|TRY|USD|EUR)?",
+            @"(\d+,\d{2})\s*(TL|TRY|USD|EUR)?",
+            @"(\d+\.\d{2})\s*(TL|TRY|USD|EUR)?",
+            @"(\d+)\s*(TL|TRY|USD|EUR)"
         };
 
         foreach (var pattern in patterns)
@@ -108,7 +107,7 @@ public static class ScraperHelpers
             if (!decimal.TryParse(numStr, NumberStyles.Any, CultureInfo.InvariantCulture, out var val)) continue;
 
             var cur = (m.Groups[2].Value ?? "").ToUpperInvariant();
-            if (cur is "TL" or "₺") cur = "TRY";
+            if (cur == "TL") cur = "TRY";
             if (string.IsNullOrEmpty(cur)) cur = "TRY";
 
             bool isValid = val >= 1.0m && val <= 100000m;
@@ -127,14 +126,17 @@ public static class ScraperHelpers
                               .FirstOrDefault() ?? "";
 
         productName = Regex.Replace(productName, @"\d+\s*adet", "", RegexOptions.IgnoreCase).Trim();
-        productName = Regex.Replace(productName, @"\d+[.,]\d+\s*(TL|₺|TRY)", "", RegexOptions.IgnoreCase).Trim();
+        productName = Regex.Replace(productName, @"\d+[.,]\d+\s*(TL|TRY)", "", RegexOptions.IgnoreCase).Trim();
         productName = Regex.Replace(productName, @"\+?KDV", "", RegexOptions.IgnoreCase).Trim();
         productName = Regex.Replace(productName, @"\(\d+\)", "").Trim();
         return productName;
     }
 
-    public static ResultRow CreateRow(string store, string seedUrl, string url, string category,
-        string productName, decimal? price, string currency, bool requiresQuote, bool hasKDV)
+    public static ResultRow CreateRow(
+        string store, string seedUrl, string url, string category,
+        string productName, decimal? price, string currency,
+        bool requiresQuote, bool hasKDV,
+        int minOrderQty = 1, decimal? listPrice = null)
     {
         return new ResultRow
         {
@@ -144,9 +146,11 @@ public static class ScraperHelpers
             Category = category,
             ProductName = CleanProductName(productName),
             Price = price,
+            ListPrice = listPrice,
             Currency = currency,
             RequiresQuote = requiresQuote,
             HasKDV = hasKDV,
+            MinOrderQty = minOrderQty,
             QuantityPriceListJson = "",
             Timestamp = DateTimeOffset.Now,
             Error = ""
@@ -178,11 +182,7 @@ public static class ScraperHelpers
             if (!string.Equals(u.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)) continue;
 
             var nu = NormalizeUrl(u.ToString());
-
-            // Navigasyon sayfalarını atla
             if (IsNavigationLink(nu, "")) continue;
-
-            // Sayfalama parametrelerini atla (?i=, ?page=, ?sort= vs.)
             if (u.Query.Length > 0 &&
                 (u.Query.Contains("i=") || u.Query.Contains("page=") ||
                  u.Query.Contains("sort=") || u.Query.Contains("filter=")))
