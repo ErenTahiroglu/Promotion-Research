@@ -22,14 +22,27 @@ public class PromoZoneScraper : ISiteScraper
         var rows = new List<ResultRow>();
         var category = await ScraperHelpers.GetPageCategoryAsync(page);
 
-        // Fiyatlar JS ile yükleniyor - ₺ sembolü görünene kadar bekle (max 6sn)
-        await page.WaitForTimeoutAsync(1500);
+        // Fiyatlar JS ile yükleniyor — daha uzun bekle ve scroll yap
+        await page.WaitForTimeoutAsync(2000);
+
+        // Sayfayı aşağı kaydırarak lazy-load fiyatları tetikle
+        await page.EvaluateAsync(@"async () => {
+            for (let i = 0; i < 5; i++) {
+                window.scrollBy(0, window.innerHeight);
+                await new Promise(r => setTimeout(r, 300));
+            }
+            window.scrollTo(0, 0);
+        }");
+        await page.WaitForTimeoutAsync(1000);
+
+        // ₺ sembolü görünene kadar bekle (max 8sn)
         try
         {
             await page.WaitForFunctionAsync(
-                @"() => document.body.innerText.indexOf('\u20ba') >= 0",
+                @"() => document.body.innerText.indexOf('\u20ba') >= 0
+                     || document.body.innerText.indexOf('TL') >= 0",
                 null,
-                new PageWaitForFunctionOptions { Timeout = 6000 });
+                new PageWaitForFunctionOptions { Timeout = 8000 });
         }
         catch { /* Fiyat yüklenmediyse devam et */ }
 
@@ -47,23 +60,25 @@ public class PromoZoneScraper : ISiteScraper
                 if (!href || seen[href]) continue;
                 seen[href] = true;
 
-                // Kart container'ını bul: a'dan yukarı çıkarak ₺ içeren ilk elementi bul
-                // Max 6 seviye yukarı çıkıyoruz
+                // Kart container'ını bul: a'dan yukarı çıkarak ₺ veya TL içeren ilk elementi bul
+                // Max 8 seviye yukarı çıkıyoruz (6 → 8)
                 var card = null;
                 var el = a;
-                for (var lvl = 0; lvl < 6; lvl++) {
+                for (var lvl = 0; lvl < 8; lvl++) {
                     el = el.parentElement;
                     if (!el) break;
-                    if ((el.innerText || """").indexOf(""\u20ba"") >= 0) {
+                    var elText = (el.innerText || """");
+                    if (elText.indexOf(""\u20ba"") >= 0 || /\d+[.,]\d{2}\s*TL/i.test(elText)) {
                         card = el;
                         break;
                     }
                 }
-                // Hiç ₺ bulunamadıysa, a'nın 3 seviye üstünü kullan
+                // Hiç ₺/TL bulunamadıysa, a'nın 4 seviye üstünü kullan
                 if (!card) {
                     card = a.parentElement;
-                    if (card && card.parentElement) card = card.parentElement;
-                    if (card && card.parentElement) card = card.parentElement;
+                    for (var up = 0; up < 3; up++) {
+                        if (card && card.parentElement) card = card.parentElement;
+                    }
                 }
 
                 // --- İsim ---
@@ -106,7 +121,7 @@ public class PromoZoneScraper : ISiteScraper
                 }
                 if (!name || name.length < 3) continue;
 
-                // --- Fiyat: card içindeki ₺ leaf elementleri tara ---
+                // --- Fiyat: card içindeki ₺ ve TL leaf elementleri tara ---
                 var price = """";
                 var listPrice = """";
                 var minQty = """";
@@ -120,26 +135,40 @@ public class PromoZoneScraper : ISiteScraper
                         var cel = allCardEls[k];
                         if (cel.children.length > 0) continue;
                         var ctxt = (cel.innerText || """").trim();
-                        if (ctxt.indexOf(""\u20ba"") < 0 || ctxt.length > 20) continue;
+                        // ₺ veya TL veya sayısal fiyat formatı ara
+                        var hasCurrencySign = ctxt.indexOf(""\u20ba"") >= 0
+                                           || /\d+[.,]\d{2}\s*TL/i.test(ctxt);
+                        if (!hasCurrencySign || ctxt.length > 25) continue;
                         var style = window.getComputedStyle(cel).textDecoration || """";
                         var tagN = cel.tagName.toLowerCase();
                         var isCrossed = style.indexOf(""line-through"") >= 0 || tagN === ""del"" || tagN === ""s"";
                         if (isCrossed) { if (!listPriceEl) listPriceEl = ctxt; }
                         else           { if (!netPriceEl)  netPriceEl  = ctxt; }
                     }
+
+                    // Fallback: leaf element bulamazsa, data-price veya aria etiketleri kontrol et
+                    if (!netPriceEl) {
+                        var dataPrice = card.querySelector(""[data-price]"");
+                        if (dataPrice) {
+                            var dp = dataPrice.getAttribute(""data-price"");
+                            if (dp && /^\d/.test(dp)) netPriceEl = dp + "" TL"";
+                        }
+                    }
+
                     if (netPriceEl)  price     = netPriceEl;
                     if (listPriceEl) listPrice = listPriceEl;
 
                     // Min sipariş adeti
                     var cardText = (card.innerText || """");
                     var mqMatch = cardText.match(/min\.?\s*sipari[sz]\s*adedi[:\s]*(\d+)/i)
-                               || cardText.match(/m[iI][nN]\.?\s+s[iI]par[iI][sz]\s+adedi[:\s]*(\d+)/i);
+                               || cardText.match(/m[iI][nN]\.?\s+s[iI]par[iI][sz]\s+adedi[:\s]*(\d+)/i)
+                               || cardText.match(/(\d+)\s*adet/i);
                     if (mqMatch) minQty = mqMatch[1];
                 }
 
                 results.push([href, name.substring(0, 150), price, listPrice, minQty]);
             }
-            return results.slice(0, 200);
+            return results.slice(0, 300);
         }";
 
         var items = await page.EvaluateAsync<string[][]>(jsListing);
@@ -181,14 +210,15 @@ public class PromoZoneScraper : ISiteScraper
     {
         var rows = new List<ResultRow>();
 
-        // ₺ sembolü görünene kadar bekle (max 8sn) — h1'den daha güvenilir
-        await page.WaitForTimeoutAsync(1000);
+        // ₺ veya TL sembolü görünene kadar bekle (max 10sn)
+        await page.WaitForTimeoutAsync(1500);
         try
         {
             await page.WaitForFunctionAsync(
-                @"() => document.body.innerText.indexOf('\u20ba') >= 0",
+                @"() => document.body.innerText.indexOf('\u20ba') >= 0
+                     || /\d+[.,]\d{2}\s*TL/i.test(document.body.innerText)",
                 null,
-                new PageWaitForFunctionOptions { Timeout = 8000 });
+                new PageWaitForFunctionOptions { Timeout = 10000 });
         }
         catch { /* Fiyat yüklenmediyse devam et */ }
 
@@ -216,7 +246,7 @@ public class PromoZoneScraper : ISiteScraper
             }
             if (!name) return ["""", """", """", ""1"", ""0""];
 
-            // --- Fiyat: ₺ leaf elementleri ---
+            // --- Fiyat: ₺ ve TL leaf elementleri ---
             var price = """";
             var listPrice = """";
             var allEls = document.querySelectorAll(""*"");
@@ -224,7 +254,9 @@ public class PromoZoneScraper : ISiteScraper
                 var el = allEls[i];
                 if (el.children.length > 0) continue;
                 var txt = (el.innerText || """").trim();
-                if (txt.indexOf(""\u20ba"") < 0 || txt.length > 25) continue;
+                var hasCurrency = txt.indexOf(""\u20ba"") >= 0
+                               || /\d+[.,]\d{2}\s*TL/i.test(txt);
+                if (!hasCurrency || txt.length > 30) continue;
                 var style = window.getComputedStyle(el).textDecoration || """";
                 var tag = el.tagName.toLowerCase();
                 var crossed = style.indexOf(""line-through"") >= 0 || tag === ""del"" || tag === ""s"";
@@ -232,11 +264,35 @@ public class PromoZoneScraper : ISiteScraper
                 else         { if (!price)     price     = txt; }
             }
 
+            // Fallback: data-price attribute
+            if (!price) {
+                var dp = document.querySelector(""[data-price]"");
+                if (dp) {
+                    var dpVal = dp.getAttribute(""data-price"");
+                    if (dpVal && /^\d/.test(dpVal)) price = dpVal + "" TL"";
+                }
+            }
+
+            // Fallback: meta og:price
+            if (!price) {
+                var ogPrice = document.querySelector(""meta[property='product:price:amount']"")
+                           || document.querySelector(""meta[property='og:price:amount']"");
+                if (ogPrice) {
+                    var pVal = ogPrice.getAttribute(""content"");
+                    if (pVal && /^\d/.test(pVal)) {
+                        var ogCur = document.querySelector(""meta[property='product:price:currency']"");
+                        var curVal = ogCur ? ogCur.getAttribute(""content"") : ""TRY"";
+                        price = pVal + "" "" + (curVal || ""TL"");
+                    }
+                }
+            }
+
             // Min sipariş
             var minQty = ""1"";
             var bodyText = document.body.innerText || """";
             var minMatch = bodyText.match(/min\.?\s*sipari[sz]\s*adedi[:\s]+(\d+)/i)
-                        || bodyText.match(/en\s+az\s+(\d+)\s+adet/i);
+                        || bodyText.match(/en\s+az\s+(\d+)\s+adet/i)
+                        || bodyText.match(/minimum[:\s]+(\d+)\s*adet/i);
             if (minMatch) minQty = minMatch[1];
 
             var hasKdv = /\+\s*kdv/i.test(bodyText) ? ""1"" : ""0"";

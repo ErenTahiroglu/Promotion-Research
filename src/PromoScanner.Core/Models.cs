@@ -36,23 +36,3 @@ public class ProductFeatures
     public string Color { get; set; } = "";
     public List<string> Properties { get; set; } = new();
 }
-
-public class SmartProductGroup
-{
-    public string Category { get; set; } = "";
-    public string Capacity { get; set; } = "";
-    public string KeyFeatures { get; set; } = "";
-    public int ProductCount { get; set; }
-    public int SiteCount { get; set; }
-    public decimal? MinPrice { get; set; }
-    public string MinPriceStore { get; set; } = "";
-    public string MinPriceUrl { get; set; } = "";
-    public decimal? MaxPrice { get; set; }
-    public string MaxPriceStore { get; set; } = "";
-    public decimal? PriceDifference { get; set; }
-    public decimal? AvgPrice { get; set; }
-    public int MinOrderQty { get; set; } = 1;
-    public string AllProductNames { get; set; } = "";
-    public string AllStores { get; set; } = "";
-    public List<ResultRow> Products { get; set; } = new();
-}

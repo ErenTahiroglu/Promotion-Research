@@ -12,8 +12,9 @@ namespace PromoScanner.Core;
 ///   3. Boyut/kapasite çıkarma  (14x21 cm, 500ml, 10000mAh…)
 ///   4. Anlamlı token seti çıkarma  (stop word temizleme, boyutları dışla)
 ///   5. Complete-linkage kümeleme — Jaccard benzerliği + materyal çelişki cezası
-///   6. Boyut uyumsuzluğu veya fiyat oranı > 20x → skor = 0
-///   7. Her site'den en ucuz temsilci → SmartProductGroup
+///   6. Boyut uyumsuzluğu veya fiyat oranı > 5x → skor = 0
+///   7. Hibrit ürün tespiti (powerbank defter gibi) → ayrı tutulur
+///   8. Her site'den en ucuz temsilci → SmartProductGroup
 /// </summary>
 public static class SmartProductMatcher
 {
@@ -33,67 +34,71 @@ public static class SmartProductMatcher
     };
 
     // ── Ürün tip taxonomy ─────────────────────────────────────────────────────
-    // Uzun/spesifik kalıplar önce — kısalar sona
+    // ÖNEMLİ: Uzun/spesifik kalıplar kısa olanlardan ÖNCE olmalı!
+    // Örn: "kalemtras" kuralı "kalem" kuralından ÖNCE gelmelidir,
+    // çünkü "kalemtras" normalize edildikten sonra "kalem" stringini de içerir.
     private static readonly (string[] Keywords, string Type)[] Taxonomy =
     {
-        // Kalem alt tipleri (önce)
-        (new[]{"kursun kalem"},                     "kalem_kursun"),
-        (new[]{"tukenmez kalem","tikenmez kalem"},   "kalem_tukenmez"),
-        (new[]{"roller kalem","jell kalem"},         "kalem_tukenmez"),
-        (new[]{"kalem kutu","kalem seti","kalem set"}, "kalem_set"),
+        // ── Hibrit / bileşik ürünler (en önce) ───────────────────────────────
+        (new[]{"powerbank defter","defter powerbank"},  "defter_powerbank"),
+        (new[]{"powerbank canta","canta powerbank"},    "canta_powerbank"),
+
+        // ── Kalem alt tipleri ─────────────────────────────────────────────────
+        (new[]{"kalemtras","kalem tras"},               "kalemtras"),    // kalem'den ÖNCE!
+        (new[]{"kalemlik"},                             "kalemlik"),     // kalem'den ÖNCE!
+        (new[]{"kursun kalem"},                         "kalem_kursun"),
+        (new[]{"tukenmez kalem","tikenmez kalem"},      "kalem_tukenmez"),
+        (new[]{"roller kalem","jell kalem"},            "kalem_tukenmez"),
+        (new[]{"kalem kutu","kalem seti","kalem set"},  "kalem_set"),
         (new[]{"ikili kalem","ciftli kalem","cifli kalem"}, "kalem_set"),
-        (new[]{"kursun"},                            "kalem_kursun"),
-        (new[]{"tukenmez","tikenmez"},               "kalem_tukenmez"),
-        (new[]{"roller","jell"},                     "kalem_tukenmez"),
-        (new[]{"kalemlik"},                          "kalemlik"),
-        (new[]{"kalem"},                             "kalem"),
+        (new[]{"kursun"},                               "kalem_kursun"),
+        (new[]{"tukenmez","tikenmez"},                  "kalem_tukenmez"),
+        (new[]{"roller","jell"},                        "kalem_tukenmez"),
+        (new[]{"kalem"},                                "kalem"),       // genel kalem EN SONDA
 
-        // Defter alt tipleri
-        (new[]{"ajanda"},                            "defter_ajanda"),
-        (new[]{"not defteri","bloknot","notluk"},    "defter_not"),
-        (new[]{"spiralli defter","spiralli"},        "defter"),
-        (new[]{"defter"},                            "defter"),
+        // ── Defter alt tipleri ────────────────────────────────────────────────
+        (new[]{"ajanda"},                               "defter_ajanda"),
+        (new[]{"not defteri","bloknot","notluk"},       "defter_not"),
+        (new[]{"spiralli defter","spiralli"},           "defter"),
+        (new[]{"defter"},                               "defter"),
 
-        // Çanta alt tipleri
-        (new[]{"sirt canta","sirt cantasi"},         "canta_sirt"),
-        (new[]{"ham bez","bez canta"},               "canta_bez"),
-        (new[]{"evrak canta"},                       "canta_evrak"),
-        (new[]{"bel cantasi"},                       "canta_bel"),
-        (new[]{"canta"},                             "canta"),
+        // ── Çanta alt tipleri ─────────────────────────────────────────────────
+        (new[]{"sirt canta","sirt cantasi"},            "canta_sirt"),
+        (new[]{"ham bez","bez canta"},                  "canta_bez"),
+        (new[]{"evrak canta"},                          "canta_evrak"),
+        (new[]{"bel cantasi"},                          "canta_bel"),
+        (new[]{"canta"},                                "canta"),
 
-        // İçecek kapları
-        (new[]{"su sisesi"},                         "su_sisesi"),
-        (new[]{"termos"},                            "termos"),
-        (new[]{"matara"},                            "termos"),
-        (new[]{"kupa bardak","kupa","bardak"},       "kupa"),
+        // ── İçecek kapları ────────────────────────────────────────────────────
+        (new[]{"su sisesi"},                            "su_sisesi"),
+        (new[]{"termos"},                               "termos"),
+        (new[]{"matara"},                               "termos"),
+        (new[]{"kupa bardak","kupa","bardak"},          "kupa"),
 
-        // Teknoloji
-        (new[]{"powerbank"},                         "powerbank"),
-        (new[]{"usb bellek","flash bellek"},         "usb_bellek"),
-        (new[]{"mouse pad","mousepad"},              "mousepad"),
-        (new[]{"telefon stand","tablet stand"},      "telefon_stand"),
-        (new[]{"sarj istasyonu","kablosuz sarj"},    "sarj"),
+        // ── Teknoloji ─────────────────────────────────────────────────────────
+        (new[]{"powerbank"},                            "powerbank"),
+        (new[]{"usb bellek","flash bellek"},            "usb_bellek"),
+        (new[]{"mouse pad","mousepad"},                 "mousepad"),
+        (new[]{"telefon stand","tablet stand"},         "telefon_stand"),
+        (new[]{"sarj istasyonu","kablosuz sarj"},       "sarj"),
 
-        // Giyim
-        (new[]{"polo yaka","tisort","tshirt","t-shirt"}, "tisort"),
-        (new[]{"sweatshirt","kazak"},                "sweatshirt"),
-        (new[]{"sapka","bere","kep"},                "sapka"),
+        // ── Giyim ─────────────────────────────────────────────────────────────
+        (new[]{"polo yaka","tisort","tshirt","t-shirt"},"tisort"),
+        (new[]{"sweatshirt","kazak"},                   "sweatshirt"),
+        (new[]{"sapka","bere","kep"},                   "sapka"),
 
-        // Ofis/masa
-        (new[]{"duvar saati"},                       "saat_duvar"),
-        (new[]{"masa saati"},                        "saat_masa"),
-        (new[]{"saat"},                              "saat"),
+        // ── Ofis/masa ─────────────────────────────────────────────────────────
+        (new[]{"duvar saati"},                          "saat_duvar"),
+        (new[]{"masa saati"},                           "saat_masa"),
+        (new[]{"saat"},                                 "saat"),
 
-        // Diğer belirli ürünler
-        (new[]{"anahtarlik"},                        "anahtarlik"),
-        (new[]{"rozet"},                             "rozet"),
-        (new[]{"kartvizitlik"},                      "kartvizitlik"),
-        (new[]{"mousepad"},                          "mousepad"),
-        (new[]{"silgi"},                             "silgi"),
-        (new[]{"cetvel"},                            "cetvel"),
-        (new[]{"makas"},                             "makas"),
-        (new[]{"kalemtraş"},                         "kalemtras"),
-        (new[]{"ajanda"},                            "defter_ajanda"),
+        // ── Diğer belirli ürünler ─────────────────────────────────────────────
+        (new[]{"anahtarlik"},                           "anahtarlik"),
+        (new[]{"rozet"},                                "rozet"),
+        (new[]{"kartvizitlik"},                         "kartvizitlik"),
+        (new[]{"silgi"},                                "silgi"),
+        (new[]{"cetvel"},                               "cetvel"),
+        (new[]{"makas"},                                "makas"),
     };
 
     // ── Boyut/kapasite kalıpları ───────────────────────────────────────────────
@@ -125,7 +130,15 @@ public static class SmartProductMatcher
         new[] { "bambu", "ahsap", "agac" },
         new[] { "deri", "pu deri", "suni deri" },
         new[] { "kumas", "tekstil", "gabardin", "pamuk" },
-        new[] { "kauçuk", "silikon" },
+        new[] { "kaucuk", "silikon" },
+        new[] { "cam", "kristal", "porselen", "seramik" },
+    };
+
+    // Premium materyaller — bunlardan birinde varsa ama diğerinde hiç materyal yoksa ceza uygula
+    private static readonly HashSet<string> PremiumMaterials = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bambu", "ahsap", "agac", "deri", "metal", "celik", "paslanmaz",
+        "aluminyum", "cam", "kristal", "porselen", "seramik"
     };
 
     // ── Ürün tipine göre Jaccard eşiği ────────────────────────────────────────
@@ -135,9 +148,11 @@ public static class SmartProductMatcher
         { "kalem_kursun",   0.28 },
         { "kalem_tukenmez", 0.28 },
         { "kalem_set",      0.35 },
+        { "kalemtras",      0.40 },
         { "defter",         0.28 },
         { "defter_ajanda",  0.25 },
         { "defter_not",     0.28 },
+        { "defter_powerbank", 0.35 },
         { "canta",          0.40 },
         { "canta_bez",      0.32 },
         { "canta_sirt",     0.32 },
@@ -198,8 +213,6 @@ public static class SmartProductMatcher
 
         foreach (var item in items)
         {
-            // Bu item'in girebileceği en iyi cluster'ı bul
-            // Complete-linkage: cluster'daki TÜM üyelerle skor >= threshold olmalı
             List<AnnotatedProduct>? bestCluster = null;
             double bestMinScore = 0;
 
@@ -229,11 +242,13 @@ public static class SmartProductMatcher
         if (!SizesCompatible(a.SizeKey, b.SizeKey))
             return 0.0;
 
-        // Aşırı fiyat farkı → muhtemelen farklı kalite / farklı ürün
+        // ── Fiyat oranı kontrolü ──────────────────────────────────────────────
+        // 20x → 5x: Aynı tip promosyon ürünleri arasında
+        // 5 kattan fazla fiyat farkı büyük ihtimalle farklı kalite/ürün demek.
         decimal priceRatio = b.Price > 0 && a.Price > 0
             ? Math.Max(a.Price, b.Price) / Math.Min(a.Price, b.Price)
             : 1m;
-        if (priceRatio > 20m)
+        if (priceRatio > 5m)
             return 0.0;
 
         if (a.Tokens.Count == 0 || b.Tokens.Count == 0)
@@ -244,8 +259,15 @@ public static class SmartProductMatcher
         int union = a.Tokens.Union(b.Tokens).Count();
         double jaccard = union > 0 ? (double)inter / union : 0.0;
 
-        // Materyal çelişki cezası (metal vs plastik vs bambu)
-        double penalty = HasMaterialConflict(a.NormalizedName, b.NormalizedName) ? 0.55 : 1.0;
+        // ── Materyal çelişki cezası ───────────────────────────────────────────
+        double penalty = 1.0;
+
+        // Doğrudan çelişki: metal vs plastik vs bambu
+        if (HasMaterialConflict(a.NormalizedName, b.NormalizedName))
+            penalty = 0.45;
+        // Tek tarafta premium materyal: bambu vs belirtilmemiş
+        else if (HasPremiumMismatch(a.NormalizedName, b.NormalizedName))
+            penalty = 0.65;
 
         return jaccard * penalty;
     }
@@ -254,11 +276,10 @@ public static class SmartProductMatcher
     private static bool SizesCompatible(string? sizeA, string? sizeB)
     {
         if (string.IsNullOrEmpty(sizeA) || string.IsNullOrEmpty(sizeB))
-            return true; // Boyut yoksa uyumlu say
+            return true;
 
         if (sizeA == sizeB) return true;
 
-        // Sayısal değerleri karşılaştır
         var numsA = Regex.Matches(sizeA, @"\d+(?:[.,]\d+)?")
                          .Select(m => double.Parse(m.Value.Replace(',', '.'),
                              System.Globalization.CultureInfo.InvariantCulture))
@@ -279,7 +300,7 @@ public static class SmartProductMatcher
         return true;
     }
 
-    // ── Materyal çelişkisi ────────────────────────────────────────────────────
+    // ── Materyal çelişkisi (her iki tarafta da bilinen materyal var) ──────────
     private static bool HasMaterialConflict(string normA, string normB)
     {
         foreach (var group in MaterialGroups)
@@ -295,6 +316,21 @@ public static class SmartProductMatcher
         return false;
     }
 
+    // ── Premium materyal uyumsuzluğu (tek tarafta premium, diğerinde yok) ────
+    private static bool HasPremiumMismatch(string normA, string normB)
+    {
+        bool aHasPremium = PremiumMaterials.Any(m => normA.Contains(m));
+        bool bHasPremium = PremiumMaterials.Any(m => normB.Contains(m));
+        bool aHasAnyMaterial = MaterialGroups.Any(g => g.Any(m => normA.Contains(m)));
+        bool bHasAnyMaterial = MaterialGroups.Any(g => g.Any(m => normB.Contains(m)));
+
+        // Bir tarafta premium materyal var, diğerinde hiçbir materyal bilgisi yok
+        if (aHasPremium && !bHasAnyMaterial) return true;
+        if (bHasPremium && !aHasAnyMaterial) return true;
+
+        return false;
+    }
+
     // ── Grup oluştur ──────────────────────────────────────────────────────────
     private static SmartProductGroup? BuildGroup(List<AnnotatedProduct> cluster, string productType)
     {
@@ -306,13 +342,13 @@ public static class SmartProductMatcher
             .Select(g => g.OrderBy(p => p.Price).First())
             .ToList();
 
-        if (byStore.Count < 2) return null; // Tek siteyse grup oluşturma
+        if (byStore.Count < 2) return null;
 
         var prices = byStore.Select(p => p.Price).ToList();
         var minItem = byStore.OrderBy(p => p.Price).First();
         var maxItem = byStore.OrderByDescending(p => p.Price).First();
 
-        // Ortak boyut (birden fazla ürün varsa en sık görüleni al)
+        // Ortak boyut
         string? commonSize = cluster
             .Select(p => p.SizeKey)
             .Where(s => !string.IsNullOrEmpty(s))
@@ -321,13 +357,11 @@ public static class SmartProductMatcher
             .FirstOrDefault()?.Key;
 
         // Ortak özellik etiketleri
-        var allFeatures = cluster.SelectMany(p => p.FeatureTags).Distinct().OrderBy(f => f);
         var commonFeatures = cluster.Count > 1
             ? cluster[0].FeatureTags
                 .Intersect(cluster[1].FeatureTags, StringComparer.OrdinalIgnoreCase)
                 .ToList()
             : cluster[0].FeatureTags.ToList();
-        // Eğer 3+ ürün varsa sadece hepsinde ortak olanları al
         for (int i = 2; i < cluster.Count; i++)
             commonFeatures = commonFeatures.Intersect(cluster[i].FeatureTags, StringComparer.OrdinalIgnoreCase).ToList();
 
@@ -343,6 +377,7 @@ public static class SmartProductMatcher
             MinPriceUrl = minItem.Row.Url,
             MaxPrice = maxItem.Price,
             MaxPriceStore = maxItem.Row.Store,
+            MaxPriceUrl = maxItem.Row.Url,
             PriceDifference = maxItem.Price - minItem.Price,
             AvgPrice = Math.Round(prices.Average(), 2),
             MinOrderQty = byStore.Min(p => p.Row.MinOrderQty),
@@ -360,14 +395,17 @@ public static class SmartProductMatcher
         "kalem_set" => "kalem seti",
         "kalem" => "kalem",
         "kalemlik" => "kalemlik",
+        "kalemtras" => "kalemtraş",
         "defter_ajanda" => "ajanda",
         "defter_not" => "not defteri",
         "defter" => "defter",
+        "defter_powerbank" => "powerbank defter",
         "canta_sirt" => "sırt çantası",
         "canta_bez" => "bez çanta",
         "canta_evrak" => "evrak çantası",
         "canta_bel" => "bel çantası",
         "canta" => "çanta",
+        "canta_powerbank" => "powerbank çanta",
         "termos" => "termos",
         "kupa" => "kupa bardak",
         "su_sisesi" => "su şişesi",
@@ -438,7 +476,6 @@ public static class SmartProductMatcher
     // ── Anlamlı token seti ────────────────────────────────────────────────────
     private static HashSet<string> ExtractTokens(string norm)
     {
-        // Boyut/sayı bilgisini çıkar — token kümesini kirletmesin
         string cleaned = norm;
         foreach (var (pat, _) in SizePatterns)
             cleaned = pat.Replace(cleaned, " ");
@@ -456,7 +493,7 @@ public static class SmartProductMatcher
         "spiral","spiralli","tarihsiz","tohumlu","dokunmatik","touch",
         "naturel","kapakli","silgili","isikli","wireless","kablosuz",
         "geri donusum","donusumlu","jell","lastikli","sert","yumusak",
-        "kilitli","ciftli","renkli","cep","boy",
+        "kilitli","ciftli","renkli","cep","boy","cam","porselen",
     };
 
     private static List<string> ExtractFeatures(string norm)

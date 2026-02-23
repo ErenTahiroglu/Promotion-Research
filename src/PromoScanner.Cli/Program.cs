@@ -57,15 +57,44 @@ var page = await context.NewPageAsync();
 page.SetDefaultNavigationTimeout(90_000);
 page.SetDefaultTimeout(10_000);
 
-var q = new Queue<(string seed, string url)>();
-foreach (var s in seeds) q.Enqueue((s, s));
+// ── Öncelikli kuyruk: detay sayfaları (ürün linkleri) önce işlensin ──────────
+// priority=0 → seed/detay sayfası (öncelikli), priority=1 → keşif linki
+var q = new SortedList<int, Queue<(string seed, string url)>>();
+q[0] = new Queue<(string seed, string url)>();
+q[1] = new Queue<(string seed, string url)>();
 
-const int MAX_PAGES = 400;
+void Enqueue(string seed, string url, int priority = 1)
+{
+    if (!q.ContainsKey(priority)) q[priority] = new Queue<(string seed, string url)>();
+    q[priority].Enqueue((seed, url));
+}
+
+(string seed, string url)? Dequeue()
+{
+    foreach (var kv in q)
+        if (kv.Value.Count > 0) return kv.Value.Dequeue();
+    return null;
+}
+
+int QueueCount() => q.Values.Sum(qu => qu.Count);
+
+bool IsProductDetailUrl(string url)
+{
+    var lower = url.ToLowerInvariant();
+    return lower.Contains("/urun/") || lower.Contains("/product/") || lower.Contains("/urunler/");
+}
+
+foreach (var s in seeds) Enqueue(s, s, 0);
+
+const int MAX_PAGES = 800;   // 400 → 800 — detay sayfalarına yetmesi için
 int processed = 0;
 
-while (q.Count > 0 && processed < MAX_PAGES)
+while (QueueCount() > 0 && processed < MAX_PAGES)
 {
-    var (seed, url) = q.Dequeue();
+    var next = Dequeue();
+    if (next == null) break;
+    var (seed, url) = next.Value;
+
     url = ScraperHelpers.NormalizeUrl(url);
 
     if (visited.Contains(url)) continue;
@@ -112,7 +141,7 @@ while (q.Count > 0 && processed < MAX_PAGES)
             {
                 LogFile($"[INFO] {catLinks.Count} kategori bulundu");
                 foreach (var cl in catLinks)
-                    if (!visited.Contains(cl)) q.Enqueue((seed, cl));
+                    if (!visited.Contains(cl)) Enqueue(seed, cl, 0);
             }
             else
             {
@@ -122,7 +151,12 @@ while (q.Count > 0 && processed < MAX_PAGES)
 
         var links = await ScraperHelpers.ExtractSameHostLinksAsync(page, u);
         foreach (var link in links)
-            if (!visited.Contains(link)) q.Enqueue((seed, link));
+        {
+            if (visited.Contains(link)) continue;
+            // Ürün detay linkleri yüksek öncelik, diğerleri düşük
+            int prio = IsProductDetailUrl(link) ? 0 : 1;
+            Enqueue(seed, link, prio);
+        }
     }
     catch (TimeoutException ex)
     {
@@ -165,12 +199,23 @@ void WriteCsv<T>(string path, IEnumerable<T> rows)
 
 WriteCsv(Path.Combine(outDir, "results.csv"), results);
 
+// ═════════════════════════════════════════════════════════════════════════════
+// KRİTİK DÜZELTME: URL bazlı dedup — fiyatlı kaydı tercih et
+// Eski hali: .GroupBy(r => r.Url).Select(g => g.First())
+// Bu, listeleme sayfasından gelen fiyatsız kaydı tutup detay sayfasından
+// gelen fiyatlı kaydı atıyordu.
+// ═════════════════════════════════════════════════════════════════════════════
 var validProducts = results
     .Where(r => string.IsNullOrEmpty(r.Error)
              && !string.IsNullOrWhiteSpace(r.ProductName)
              && r.ProductName.Length >= 5)
     .GroupBy(r => r.Url)
-    .Select(g => g.First())
+    .Select(g =>
+    {
+        // Fiyatlı olanı tercih et, yoksa ilkini al
+        var priced = g.FirstOrDefault(r => r.Price.HasValue && r.Price > 0);
+        return priced ?? g.First();
+    })
     .ToList();
 
 LogFile($"Ham: {results.Count} - Gecerli: {validProducts.Count}");
