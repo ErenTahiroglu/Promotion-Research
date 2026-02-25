@@ -184,7 +184,7 @@ public static class ScraperHelpers
             var nu = NormalizeUrl(u.ToString());
             if (IsNavigationLink(nu, "")) continue;
             if (u.Query.Length > 0 &&
-                (u.Query.Contains("i=") || u.Query.Contains("page=") ||
+                (u.Query.Contains("i=") ||
                  u.Query.Contains("sort=") || u.Query.Contains("filter=")))
                 continue;
 
@@ -212,5 +212,86 @@ public static class ScraperHelpers
         }
         catch { }
         return links.Distinct().Take(30).ToList();
+    }
+
+    // ── Pagination linkleri keşfi ─────────────────────────────────────────────
+    /// <summary>
+    /// Sayfadaki pagination/sayfalama linklerini bulur.
+    /// Sonraki sayfa, sayfa numaraları, "Sonraki"/"Next" butonları gibi
+    /// yaygın kalıpları tanır.
+    /// </summary>
+    public static async Task<List<string>> FindPaginationLinksAsync(IPage page, Uri baseUri)
+    {
+        var links = new List<string>();
+        try
+        {
+            var jsCode = @"() => {
+                const results = new Set();
+                const host = location.hostname;
+
+                // 1) rel='next'
+                document.querySelectorAll('a[rel=""next""]').forEach(a => {
+                    if (a.href) results.add(a.href);
+                });
+
+                // 2) Yaygın pagination CSS selektörleri
+                const selectors = [
+                    '.pagination a',
+                    '.pager a',
+                    '.page-link',
+                    'ul.pagination li a',
+                    '.paginator a',
+                    'nav[aria-label*=""page""] a',
+                    'nav[aria-label*=""sayfa""] a',
+                    '.page-numbers a',
+                    '.pages a',
+                    '[class*=""pagination""] a',
+                    '[class*=""paging""] a',
+                    '[class*=""sayfa""] a',
+                    '.pageNav a',
+                    '.page_nav a',
+                ];
+                for (const sel of selectors) {
+                    try {
+                        document.querySelectorAll(sel).forEach(a => {
+                            if (a.href) {
+                                try { if (new URL(a.href).hostname === host) results.add(a.href); } catch{}
+                            }
+                        });
+                    } catch{}
+                }
+
+                // 3) Metin bazlı: Sonraki, İleri, Next, », ›, >
+                document.querySelectorAll('a[href]').forEach(a => {
+                    const text = (a.innerText || '').trim();
+                    if (/^(sonraki|ileri|next|»|›|>|>>|devam|daha fazla|more)$/i.test(text)) {
+                        try { if (new URL(a.href).hostname === host) results.add(a.href); } catch{}
+                    }
+                });
+
+                // 4) URL'de page/sayfa parametresi olan linkler
+                document.querySelectorAll('a[href]').forEach(a => {
+                    const href = a.href || '';
+                    if (/[?&](page|sayfa|p|pg|pagenum)=\d+/i.test(href) ||
+                        /\/(page|sayfa)\/\d+/i.test(href)) {
+                        try { if (new URL(href).hostname === host) results.add(href); } catch{}
+                    }
+                });
+
+                return [...results];
+            }";
+
+            var hrefs = await page.EvaluateAsync<string[]>(jsCode);
+            foreach (var h in hrefs ?? Array.Empty<string>())
+            {
+                if (!Uri.TryCreate(h, UriKind.Absolute, out var u)) continue;
+                if (!string.Equals(u.Host, baseUri.Host, StringComparison.OrdinalIgnoreCase)) continue;
+                var nu = NormalizeUrl(u.ToString());
+                if (!string.IsNullOrWhiteSpace(nu))
+                    links.Add(nu);
+            }
+        }
+        catch { }
+        return links.Distinct().ToList();
     }
 }

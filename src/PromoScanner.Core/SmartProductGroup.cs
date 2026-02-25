@@ -3,7 +3,7 @@
 namespace PromoScanner.Core;
 
 /// <summary>
-/// Birden fazla sitedeki benzer ürünleri temsil eden karşılaştırma grubu.
+/// Birden fazla sitedeki benzer urunleri temsil eder.
 /// </summary>
 public class SmartProductGroup
 {
@@ -31,6 +31,12 @@ public class SmartProductGroup
     [Name("MinPriceUrl")]
     public string MinPriceUrl { get; set; } = "";
 
+    [Name("MinPriceMinQty")]
+    public int MinPriceMinQty { get; set; } = 1;
+
+    [Name("MinPriceTotalCost")]
+    public decimal? MinPriceTotalCost { get; set; }
+
     [Name("MaxPrice")]
     public decimal? MaxPrice { get; set; }
 
@@ -40,6 +46,12 @@ public class SmartProductGroup
     [Name("MaxPriceUrl")]
     public string MaxPriceUrl { get; set; } = "";
 
+    [Name("MaxPriceMinQty")]
+    public int MaxPriceMinQty { get; set; } = 1;
+
+    [Name("MaxPriceTotalCost")]
+    public decimal? MaxPriceTotalCost { get; set; }
+
     [Name("PriceDifference")]
     public decimal? PriceDifference { get; set; }
 
@@ -47,7 +59,10 @@ public class SmartProductGroup
     public decimal? AvgPrice { get; set; }
 
     [Name("MinOrderQty")]
-    public int MinOrderQty { get; set; }
+    public int MinOrderQty { get; set; } = 1;
+
+    [Name("SiteCostBreakdown")]
+    public string SiteCostBreakdown { get; set; } = "";
 
     [Name("AllProductNames")]
     public string AllProductNames { get; set; } = "";
