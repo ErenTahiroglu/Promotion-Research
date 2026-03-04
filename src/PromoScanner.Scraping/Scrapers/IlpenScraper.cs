@@ -3,7 +3,7 @@ using PromoScanner.Core;
 
 namespace PromoScanner.Scraping.Scrapers;
 
-public class IlpenScraper : ISiteScraper
+public sealed class IlpenScraper : ISiteScraper
 {
     public string HostPattern => "ilpen";
 
@@ -16,16 +16,14 @@ public class IlpenScraper : ISiteScraper
         // İlpen sayfaları JS ile render ediyor — biraz bekle
         await page.WaitForTimeoutAsync(1500);
 
-        // Önce ürün grid elementini bekle
         try
         {
             await page.WaitForSelectorAsync(
                 ".laberProductGrid .item, .products-grid .item, .product-list .item",
                 new() { Timeout = 7000 });
         }
-        catch { }
+        catch (PlaywrightException) { }
 
-        // Hem .laberProductGrid hem alternatif grid selectorlarını dene
         var cardSelectors = new[]
         {
             ".laberProductGrid .item",
@@ -41,15 +39,11 @@ public class IlpenScraper : ISiteScraper
             if (found.Count > 0) { cards = found.ToList(); break; }
         }
 
-        // Hiç kart bulunamazsa sayfanın tamamından ürün linklerini JS ile topla
         if (cards.Count == 0)
-        {
             return await FallbackJsExtractAsync(page, pageUri, store, seedUrl, category);
-        }
 
         foreach (var item in cards)
         {
-            // ── Ürün adı ──────────────────────────────────────────────────────
             var nameEl = await item.QuerySelectorAsync(
                 "h2.productName a, .product-name a, h2 a, h3 a, .name a, a.product-item-link");
 
@@ -59,8 +53,7 @@ public class IlpenScraper : ISiteScraper
             var href = await nameEl.GetAttributeAsync("href");
             if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(name)) continue;
 
-            // ── Fiyat ─────────────────────────────────────────────────────────
-            // İlpen birden fazla fiyat class'ı kullanıyor; sırayla dene
+            // Fiyat
             string priceText = "";
             var priceSelectors = new[]
             {
@@ -85,9 +78,28 @@ public class IlpenScraper : ISiteScraper
                 }
             }
 
-            var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText);
+            // Min sipariş — kart içinde ara
+            int minQty = 1;
+            try
+            {
+                var cardText = (await item.InnerTextAsync())?.Trim() ?? "";
+                var mqMatch = System.Text.RegularExpressions.Regex.Match(cardText,
+                    @"min\.?\s*sipari[sz]\s*(?:adedi)?[:\s]+(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!mqMatch.Success)
+                    mqMatch = System.Text.RegularExpressions.Regex.Match(cardText,
+                        @"minimum[:\s]+(\d+)\s*adet", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!mqMatch.Success)
+                    mqMatch = System.Text.RegularExpressions.Regex.Match(cardText,
+                        @"en\s+az\s+(\d+)\s+adet", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (!mqMatch.Success)
+                    mqMatch = System.Text.RegularExpressions.Regex.Match(cardText,
+                        @"(\d+)\s*adet\s*(?:ve\s+)?[uü]zeri", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (mqMatch.Success && int.TryParse(mqMatch.Groups[1].Value, out var mq) && mq > 0)
+                    minQty = mq;
+            }
+            catch (PlaywrightException) { }
 
-            // Fiyat hiç bulunamadıysa "teklif gerekli" olarak işaretle
+            var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText);
             bool requiresQuote = quote || (!p.HasValue && string.IsNullOrWhiteSpace(priceText));
 
             var abs = Uri.TryCreate(pageUri, href, out var absUri) ? absUri!.ToString() : href!;
@@ -96,7 +108,8 @@ public class IlpenScraper : ISiteScraper
                 valid ? p : null,
                 string.IsNullOrEmpty(ccy) ? "TRY" : ccy,
                 requiresQuote,
-                kdv));
+                kdv,
+                minQty));
         }
 
         return rows;
@@ -112,10 +125,8 @@ public class IlpenScraper : ISiteScraper
             const seen = new Set();
             const results = [];
 
-            // İlpen ürün linkleri genellikle /tr/ ya da /en/ altında
             document.querySelectorAll('a[href]').forEach(a => {
                 const href = a.href || '';
-                // Ürün detay sayfası URL'i tanı
                 if (!href.match(/\/(tr|en)\/\d+-/) && !href.includes('/product/')) return;
                 if (seen.has(href)) return;
                 seen.add(href);
@@ -137,7 +148,18 @@ public class IlpenScraper : ISiteScraper
                     if (priceEl) price = (priceEl.innerText || '').trim();
                 }
 
-                results.push([href, name.slice(0, 150), price]);
+                // Min sipariş
+                let minQty = '';
+                if (card) {
+                    const cardText = card.innerText || '';
+                    const mq = cardText.match(/min\.?\s*sipari[sz]\s*(?:adedi)?[:\s]+(\d+)/i)
+                            || cardText.match(/minimum[:\s]+(\d+)\s*adet/i)
+                            || cardText.match(/en\s+az\s+(\d+)\s+adet/i)
+                            || cardText.match(/(\d+)\s*adet\s*(?:ve\s+)?[uü]zeri/i);
+                    if (mq) minQty = mq[1];
+                }
+
+                results.push([href, name.slice(0, 150), price, minQty]);
             });
 
             return results.slice(0, 200);
@@ -149,6 +171,7 @@ public class IlpenScraper : ISiteScraper
             var href = item[0];
             var name = item[1];
             var priceText = item.Length > 2 ? item[2] : "";
+            var minQtyStr = item.Length > 3 ? item[3] : "";
 
             if (string.IsNullOrWhiteSpace(name) || name.Length < 3) continue;
             if (ScraperHelpers.IsNavigationLink(href, name)) continue;
@@ -156,11 +179,14 @@ public class IlpenScraper : ISiteScraper
             var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText);
             bool requiresQuote = quote || (!p.HasValue && string.IsNullOrWhiteSpace(priceText));
 
+            int.TryParse(minQtyStr, out var minQty);
+            if (minQty < 1) minQty = 1;
+
             rows.Add(ScraperHelpers.CreateRow(
                 store, seedUrl, href, category, name,
                 valid ? p : null,
                 string.IsNullOrEmpty(ccy) ? "TRY" : ccy,
-                requiresQuote, kdv));
+                requiresQuote, kdv, minQty));
         }
 
         return rows;

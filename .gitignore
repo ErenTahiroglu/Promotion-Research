@@ -1,8 +1,6 @@
-## .NET
+## .NET Core
 bin/
 obj/
-**/bin/
-**/obj/
 *.user
 *.suo
 *.userosscache
@@ -11,44 +9,21 @@ obj/
 ## Visual Studio / IDE
 .vs/
 .idea/
+.vscode/
 
-## Logs / output
+## Logs / Output / Run artifacts
 out/
-*.log
-
-## Playwright artifacts
 raw/
 screenshots/
-
-# Outputs you don't want in repo
-results*.csv
-visited_urls*.txt
-
-# If you produce these locally
+*.log
 *.csv
-*.log
-
-# Playwright artifacts
-raw/
-screenshots/
-out/
-results*.csv
+*.xlsx
 visited_urls*.txt
-*.png
-*.html
-raw/
-screenshots/
+results*.txt
 
-# build artifacts
-**/bin/
-**/obj/
-.vs/
+## Playwright
+.playwright/
 
-# runtime outputs
-out/
-raw/
-
-# user-specific inputs/outputs
-urls.txt
-visited_urls*.txt
-results*.csv
+## OS
+.DS_Store
+Thumbs.db

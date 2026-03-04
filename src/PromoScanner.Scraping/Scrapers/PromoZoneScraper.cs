@@ -3,7 +3,7 @@ using PromoScanner.Core;
 
 namespace PromoScanner.Scraping.Scrapers;
 
-public class PromoZoneScraper : ISiteScraper
+public sealed class PromoZoneScraper : ISiteScraper
 {
     public string HostPattern => "promozone";
 

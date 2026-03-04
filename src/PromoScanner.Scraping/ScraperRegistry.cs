@@ -2,15 +2,15 @@
 
 namespace PromoScanner.Scraping;
 
-public class ScraperRegistry
+public sealed class ScraperRegistry : IScraperRegistry
 {
     private readonly List<ISiteScraper> _scrapers;
 
     public ScraperRegistry()
     {
         // ✅ YENİ SİTE EKLEMEK İÇİN SADECE BURAYA BİR SATIR EKLE:
-        _scrapers = new List<ISiteScraper>
-        {
+        _scrapers =
+        [
             new BidoluBaskiScraper(),
             new PromoZoneScraper(),
             new TurkuazPromosyonScraper(),
@@ -19,11 +19,32 @@ public class ScraperRegistry
             new PromosyonikScraper(),
             new AksiyonPromosyonScraper(),
             new IlpenScraper(),
-        };
+        ];
     }
 
-    /// <summary>URI'ye göre uygun scraper'ı döner. Bulunamazsa null.</summary>
+    /// <summary>
+    /// DI üzerinden scraper listesi alarak oluşturma imkânı.
+    /// </summary>
+    public ScraperRegistry(IEnumerable<ISiteScraper> scrapers)
+    {
+        _scrapers = scrapers.ToList();
+    }
+
+    /// <summary>
+    /// URI'ye göre uygun scraper'ı döner. Domain sınırında (. veya başlangıç) eşleşme yapar.
+    /// Böylece "promozone" sadece "promozone.com.tr" ile eşleşir, "notpromozone.com" ile değil.
+    /// </summary>
     public ISiteScraper? FindScraper(Uri uri)
-        => _scrapers.FirstOrDefault(s =>
-               uri.Host.Contains(s.HostPattern, StringComparison.OrdinalIgnoreCase));
+    {
+        var host = uri.Host;
+        return _scrapers.FirstOrDefault(s =>
+        {
+            var pattern = s.HostPattern;
+            int idx = host.IndexOf(pattern, StringComparison.OrdinalIgnoreCase);
+            if (idx < 0) return false;
+
+            // Pattern domain sınırında olmalı: ya host başındaysa ya da öncesinde '.' olmalı
+            return idx == 0 || host[idx - 1] == '.';
+        });
+    }
 }

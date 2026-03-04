@@ -4,31 +4,23 @@ using PromoScanner.Core;
 
 namespace PromoScanner.Scraping.Scrapers;
 
-public class AksiyonPromosyonScraper : ISiteScraper
+public sealed class BatiPromosyonScraper : ISiteScraper
 {
-    public string HostPattern => "aksiyonpromosyon";
+    public string HostPattern => "batipromosyon";
 
     public async Task<List<ResultRow>> ExtractAsync(IPage page, Uri pageUri, string seedUrl)
     {
-        // Detay sayfası mı yoksa listeleme mi?
         if (IsDetailPage(pageUri))
             return await ExtractDetailAsync(page, pageUri, seedUrl);
 
         return await ExtractListingAsync(page, pageUri, seedUrl);
     }
 
-    // ── URL pattern tespiti ───────────────────────────────────────────────────
-    /// <summary>
-    /// Aksiyon ürün detay URL'leri: /urun-adi-sonunda-sayı  (ör: ...-2595)
-    /// Listeleme/ana sayfa ise kısa path.
-    /// </summary>
     private static bool IsDetailPage(Uri uri)
     {
         var path = uri.AbsolutePath.Trim('/');
-        // Ana sayfa veya çok kısa path → listeleme
-        if (string.IsNullOrEmpty(path) || path.Split('/').Length < 1) return false;
-        // Detay URL'ler genelde uzun slug + sonunda sayı: /baret-seklinde-...-2595
-        return Regex.IsMatch(path, @"-\d{2,}$");
+        // Batı detay URL'leri: /urunler/kategori/urun-adi-123 (sonunda sayı)
+        return Regex.IsMatch(path, @"-\d{2,}$") || Regex.IsMatch(path, @"/\d{3,}[A-Z]{0,5}$");
     }
 
     // ── Listeleme sayfası ─────────────────────────────────────────────────────
@@ -38,26 +30,61 @@ public class AksiyonPromosyonScraper : ISiteScraper
         var store = pageUri.Host;
         var category = await ScraperHelpers.GetPageCategoryAsync(page);
 
-        try { await page.WaitForSelectorAsync(".product-item", new() { Timeout = 5000 }); } catch { }
+        try { await page.WaitForSelectorAsync(".product-card", new() { Timeout = 5000 }); } catch { }
 
-        foreach (var item in await page.QuerySelectorAllAsync(".product-item"))
+        var jsListing = @"() => {
+            const results = [];
+            document.querySelectorAll('.product-card').forEach(card => {
+                const nameEl = card.querySelector('.product-card__name a, .product-card__name');
+                if (!nameEl) return;
+                const name = (nameEl.innerText || '').replace(/\s+/g, ' ').trim();
+                if (!name || name.length < 3) return;
+
+                const linkEl = card.querySelector('a[href]');
+                const href = linkEl ? linkEl.href : '';
+                if (!href) return;
+
+                // Fiyat
+                const priceEl = card.querySelector('.product-card__price--new, .product-card__prices');
+                const priceText = priceEl ? (priceEl.innerText || '').trim() : '';
+
+                // Min sipariş
+                let minQty = '';
+                const cardText = card.innerText || '';
+                const mq = cardText.match(/min\.?\s*sipari[sz]\s*(?:adedi)?[:\s]+(\d+)/i)
+                        || cardText.match(/minimum[:\s]+(\d+)\s*adet/i)
+                        || cardText.match(/en\s+az\s+(\d+)\s+adet/i)
+                        || cardText.match(/(\d+)\s*adet\s*(?:ve\s+)?[uü]zeri/i);
+                if (mq) minQty = mq[1];
+
+                results.push([href, name.substring(0, 150), priceText, minQty]);
+            });
+            return results.slice(0, 300);
+        }";
+
+        var items = await page.EvaluateAsync<string[][]>(jsListing);
+
+        foreach (var item in items ?? Array.Empty<string[]>())
         {
-            var nameEl = await item.QuerySelectorAsync("a.cat, .title a");
-            if (nameEl == null) continue;
+            if (item.Length < 2) continue;
+            var href = item[0];
+            var name = item[1];
+            var priceText = item.Length > 2 ? item[2] : "";
+            var minQtyStr = item.Length > 3 ? item[3] : "";
 
-            var name = (await nameEl.InnerTextAsync())?.Trim();
-            var href = await nameEl.GetAttributeAsync("href");
-            if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(name)) continue;
+            if (string.IsNullOrWhiteSpace(name) || name.Length < 3) continue;
+            if (ScraperHelpers.IsNavigationLink(href, name)) continue;
 
-            var priceEl = await item.QuerySelectorAsync(".get-price.price, .price.net");
-            var priceText = priceEl != null ? (await priceEl.InnerTextAsync())?.Trim() : "";
-            var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText ?? "");
+            var (p, ccy, quote, kdv, valid) = ScraperHelpers.ParsePrice(priceText);
             if (!valid && p.HasValue) continue;
+
+            int.TryParse(minQtyStr, out var minQty);
+            if (minQty < 1) minQty = 1;
 
             if (p.HasValue || quote)
             {
                 var abs = Uri.TryCreate(pageUri, href, out var absUri) ? absUri!.ToString() : href!;
-                rows.Add(ScraperHelpers.CreateRow(store, seedUrl, abs, category, name, p, ccy, quote, kdv));
+                rows.Add(ScraperHelpers.CreateRow(store, seedUrl, abs, category, name, p, ccy, quote, kdv, minQty));
             }
         }
         return rows;
@@ -71,7 +98,6 @@ public class AksiyonPromosyonScraper : ISiteScraper
 
         await page.WaitForTimeoutAsync(1000);
 
-        // Fiyat yüklenmesini bekle
         try
         {
             await page.WaitForFunctionAsync(
@@ -83,10 +109,9 @@ public class AksiyonPromosyonScraper : ISiteScraper
                 null,
                 new PageWaitForFunctionOptions { Timeout = 6000 });
         }
-        catch { }
+        catch (PlaywrightException) { }
 
         var jsDetail = @"() => {
-            // ── Ürün adı ──────────────────────────────────────────────
             var name = '';
             var h1 = document.querySelector('h1');
             if (h1) {
@@ -103,13 +128,10 @@ public class AksiyonPromosyonScraper : ISiteScraper
             }
             if (!name || name.length < 3) return null;
 
-            // ── Fiyat ──────────────────────────────────────────────────
             var price = '';
             var listPrice = '';
-
-            // Bilinen price elementleri
             var priceSelectors = [
-                '.get-price.price', '.price.net', '.product-price',
+                '.product-card__price--new', '.product-price',
                 '.special-price', '.price-new', '.price-box .price',
                 '[class*=""fiyat""]', '[class*=""price""]',
             ];
@@ -123,7 +145,6 @@ public class AksiyonPromosyonScraper : ISiteScraper
                 }
             }
 
-            // Fallback: leaf elementlerde ₺/TL ara
             if (!price) {
                 var allEls = document.querySelectorAll('*');
                 for (var i = 0; i < allEls.length; i++) {
@@ -141,7 +162,6 @@ public class AksiyonPromosyonScraper : ISiteScraper
                 }
             }
 
-            // og:price meta
             if (!price) {
                 var ogPrice = document.querySelector('meta[property=""product:price:amount""]')
                            || document.querySelector('meta[property=""og:price:amount""]');
@@ -155,7 +175,8 @@ public class AksiyonPromosyonScraper : ISiteScraper
             var bodyText = document.body.innerText || '';
             var mq = bodyText.match(/min\.?\s*sipari[sz]\s*(?:adedi)?[:\s]+(\d+)/i)
                   || bodyText.match(/minimum[:\s]+(\d+)\s*adet/i)
-                  || bodyText.match(/en\s+az\s+(\d+)\s+adet/i);
+                  || bodyText.match(/en\s+az\s+(\d+)\s+adet/i)
+                  || bodyText.match(/(\d+)\s*adet\s*(?:ve\s+)?[uü]zeri/i);
             if (mq) minQty = mq[1];
 
             var hasKdv = /\+\s*kdv/i.test(bodyText) ? '1' : '0';
