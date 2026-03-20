@@ -1,6 +1,27 @@
 # PromoScanner
 
+> ⚠️ **ARCHIVED** — Bu proje arşivlenmiş durumda olup, aktif bakım görmemektedir. Hedef sitelerin HTML DOM yapıları zamanla değişeceği için canlı (live) web kazıma işlemleri hata verebilir. Sistemin mimarisini incelemek ve test etmek için **Mock Mode** kullanmanız önerilir.
+
 Türkiye'deki B2B promosyon ürün tedarikçilerinin e-ticaret sitelerinden otomatik ürün bilgisi toplayan, verileri analiz eden ve gelişmiş algoritmalarla **"Hangi ürün, hangi sitede en F/P (Fiyat/Performans)"** karşılaştırması yapan **.NET 8 + Playwright** tabanlı modüler web crawler & analiz aracıdır.
+
+## 📌 Arşivlenmiş Proje Kullanma
+
+### Live Mode (Canlı Kazıma - Tavsiye Edilmez)
+Hedef sitelerin DOM yapıları değişmiş olabilir. Canlı kazıma işlemlerinde hatalar yaşayabilirsiniz.
+
+### Mock Mode (Önerilir - Test & Mimarı İncelemek İçin)
+Sistem mimarisini test etmek ve raporlama pipeline'ını görmek için:
+
+1. **appsettings.json'da aşağıdakini ayarlayın:**
+   ```json
+   {
+     "RunMode": "Mock",
+     "MockHtmlFolder": "mock_html_samples"
+   }
+   ```
+
+2. **Mock HTML örneklerinden veri çekileceği için hiçbir canlı HTTP isteği yapılmaz.**
+3. **SmartProductMatcher ve raporlama (Excel/CSV) işlemleri tam işlev görecektir.**
 
 ## 🚀 Öne Çıkan Özellikler
 
@@ -11,6 +32,50 @@ Türkiye'deki B2B promosyon ürün tedarikçilerinin e-ticaret sitelerinden otom
 *   **Tamamen O(1) ve Thread-Safe Mimari**: Görev kuyrukları (`CrawlQueue`), seed urlleri ve sayfa önbellekleri O(1) karmaşıklığıyla çalışır. `ConcurrentBag` kullanarak paralel taramaya (`MaxConcurrency`) tam uyumludur.
 *   **Çift Yönlü Loglama**: Süreç boyunca konsola basılan tüm metrik ve uyarıları anlık olarak `TeeTextWriter` üzerinden lokal `run.log` dosyasına yedekler.
 *   **Zengin Excel Çıktısı (ClosedXML)**: Elde edilen verileri *Özet, Tüm Ürünler, Karşılaştırma, En İyi Fırsatlar, Teklif Gereken* ve *Teklif Alternatifleri* olmak üzere 6 sekmeli, koşullu biçimlendirmeli (Örn: %50 üzeri fiyat farklarında sarı uyarı) zengin bir Excel dosyasına aktarır.
+
+## 📊 Veri Akış Mimarisi (Data Flow)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ 1. CRAWLER ENGINE                                            │
+│    • urls.txt veya Mock HTML'den seed URL'leri oku           │
+│    • Sayfa kütüphanesi (cache) ile hızlı erişim             │
+│    • Kara liste (blacklist) yönetimi                         │
+└──────────────────┬───────────────────────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 2. SCRAPER REGISTRY + SITE-SPECIFIC SCRAPERS                │
+│    • ISiteScraper arayüzü impl. (8 site için)               │
+│    • JavaScript JS extraction + DOM parsing                  │
+│    • Fiyat, min. sipariş, kategori çıkarma                  │
+└──────────────────┬───────────────────────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 3. RESULT ROWS                                               │
+│    • Store, URL, Ürün Adı, Fiyat, KDV, Min Qty              │
+│    • Boş/Hatalı fiyatlar filtrelenmiş                        │
+└──────────────────┬───────────────────────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 4. SMART PRODUCT MATCHER                                     │
+│    • Ürün adı normalizasyonu (Türkçe char support)           │
+│    • SEO temizleme                                           │
+│    • Complete-linkage clustering (threshold: appsettings)    │
+│    • Material uyumluluk ve premium kontrol                   │
+│    • F/P (Fiyat/Performans) karşılaştırması                 │
+└──────────────────┬───────────────────────────────────────────┘
+                   │
+                   ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 5. REPORT ORCHESTRATOR (Excel + CSV)                         │
+│    • Özet, Tüm Ürünler, Karşılaştırma, En İyi Fırsatlar     │
+│    • Koşullu biçimlendirme (ClosedXML)                       │
+│    • run.log: Konsol çıktısının arşivi (TeeTextWriter)       │
+└──────────────────────────────────────────────────────────────┘
+```
 
 ## 🏗️ Proje Mimarisi
 
@@ -48,25 +113,45 @@ PromoScanner.sln
 
 ## 🚀 Hızlı Başlangıç
 
-1.  **Depoyu Klonlayın ve Derleyin:**
-    ```bash
-    git clone <PROJE_URL>
-    cd PromoScanner
-    dotnet build
-    ```
+### 1. Depoyu Klonlayın ve Derleyin
+```bash
+git clone <PROJE_URL>
+cd "Promosyon Araştırması"
+dotnet restore
+dotnet build
+```
 
-2.  **Playwright Tarayıcılarını Kurun (İlk Sefer İçin):**
-    ```bash
-    pwsh bin/Debug/net8.0/playwright.ps1 install chromium
-    ```
+### 2. Mock Mode'da Test Edin (Tavsiye Edilir)
+Hiçbir bağımlılık veya canlı web erişimi olmadan sistemi test edin:
 
-3.  **Tarama Hedeflerini (Seed URLs) Belirleyin:**
-    `src/PromoScanner.Cli/urls.txt` dosyası içerisine, taranmasını istediğiniz tedarikçi kategori veya ürün sayfalarını alt alta ekleyin.
+```bash
+# appsettings.json'da şu ayarları doğrulayın:
+# "RunMode": "Mock",
+# "MockHtmlFolder": "mock_html_samples"
 
-4.  **Uygulamayı Çalıştırın:**
-    ```bash
-    dotnet run --project src/PromoScanner.Cli
-    ```
+dotnet run --project src/PromoScanner.Cli
+```
+
+Çıktı: `output/` klasöründe Excel ve CSV dosyaları oluşturulacaktır.
+
+### 3. Playwright Tarayıcılarını Kurun (Sadece Live Mode İçin)
+```bash
+# Opsiyonel: Canlı kazıma yapmak isterseniz
+pwsh bin/Debug/net8.0/playwright.ps1 install chromium
+```
+
+### 4. Canlı Kazıma (Live Mode) - Dikkatli Kullanın
+```json
+{
+  "RunMode": "Live",
+  "MockHtmlFolder": "mock_html_samples"
+}
+```
+
+`src/PromoScanner.Cli/urls.txt` dosyasına seed URL'lerini ekleyin ve çalıştırın:
+```bash
+dotnet run --project src/PromoScanner.Cli
+```
 
 ## 🛠️ Konfigürasyon (`appsettings.json`)
 

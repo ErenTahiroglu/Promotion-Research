@@ -13,6 +13,7 @@ obj/
 
 ## Logs / Output / Run artifacts
 out/
+output/
 raw/
 screenshots/
 *.log
@@ -27,3 +28,11 @@ results*.txt
 ## OS
 .DS_Store
 Thumbs.db
+
+## Mock HTML Samples (Keep in repo for archived reference)
+# mock_html_samples/ — DO NOT ignore, needed for Mock Mode testing
+
+## Sensitive Data (if any)
+*.secrets.json
+*.config.local
+appsettings.Development.json
